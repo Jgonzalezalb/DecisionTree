@@ -100,13 +100,18 @@ nba['PositionEncoded'] = nba['Position'].map({'G': 0,
                             'G-F': 1})
 
 
-# TODO: nba['WeightPounds'] = nba['Weight']
-# la idea es pasar todo a pounds multiplicando los valores de la columna
-# que estan en kg (son str) por 2,20462 y una vez limpia clasificar la columna
-# en 4 o 5 categorias como la de abajo:
 
-#nba['WeightPounds'].str.contains('kg').replace(nba['Weight'].replace(regex=True,inplace=True,to_replace=r'\D',value=r'')**2.20462)
-#nba['WeightPounds']
+nba['WeightPounds'] = nba['Weight']
+filtro_kg = nba['WeightPounds'].str.contains('kg') # Lo necesitas almacenar para luego
+
+# ahora seria remplazar el kg  y pasarlo a numerico algo como Estoy
+nba.loc[filtro_kg, 'WeightPounds'] = nba.loc[filtro_kg, 'WeightPounds'].replace({r'([0-9]*)(kg)': r'\1'}, regex=True)
+nba.loc[filtro_kg, 'WeightPounds'] = nba.loc[filtro_kg,'WeightPounds'].astype(float )
+
+# ahora ya puedes multiplicar
+nba.loc[filtro_kg, 'WeightPounds'] = nba.loc[filtro_kg, 'WeightPounds']  * 2.20462
+nba['WeightPounds'] = pd.to_numeric(nba['WeightPounds'])
+
 
 nba.loc[nba['Seasons in league'] <= 3, 'SeasonsEncoded'] = 0
 nba.loc[(nba['Seasons in league'] > 3) & (nba['Seasons in league'] <= 5), 'SeasonsEncoded'] = 1
@@ -115,6 +120,25 @@ nba.loc[(nba['Seasons in league'] > 7) & (nba['Seasons in league'] <= 10), 'Seas
 nba.loc[nba['Seasons in league'] > 10, 'SeasonsEncoded'] = 4
 
 
+nba['HeightCms'] = nba['Height']
+filtro_feet = nba['HeightCms'].str.contains('-')
+filtro_inches = nba.loc[filtro_feet, 'HeightCms'].str.split('-', expand=True)
+filtro_inches[0] = filtro_inches[0].astype(float) * 30.48
+filtro_inches[1] = filtro_inches[1].astype(float) * 2.54
+filtro_inches[2] = filtro_inches[0] + filtro_inches[1]
+nba.loc[filtro_feet, 'HeightCms'] = filtro_inches[2]
+
+filtro_Cms = nba['HeightCms'].str.contains('cm')
+nba.loc[filtro_Cms, 'HeightCms'] = nba.loc[filtro_Cms, 'HeightCms'].replace({r'([0-9]*)(cm)': r'\1'}, regex=True)
+nba['HeightCms'] = pd.to_numeric(nba['HeightCms'])
+
+
+nba.loc[filtro_feet, 'HeightCms'] = nba.loc[filtro_feet, 'HeightCms'].astype(float)
+nba.loc[filtro_feet, 'HeightCms'] = nba.loc[filtro_feet, 'HeightCms'].replace({'-': '.'}, regex=True)
+
+filtro_inches
+filtro_feet
+nba['HeightCms']
 
 
 
@@ -128,41 +152,17 @@ nba['SeasonsEncoded'].value_counts()
 # división PACIFIC (1), tener entre 23 y 26 años (2), jugar en la
 # posicion de SG (0) y llevar menos de tres temporadas en la liga.
 
-nbaEncoded = nba[['TeamEncoded', 'AgeEncoded', 'PositionEncoded', 'SeasonsEncoded']]
+nbaEncoded = nba[['TeamEncoded', 'Age', 'PositionEncoded', 'Seasons in league', 'WeightPounds', 'HeightCms']]
+nba
+nbaEncoded
 
 nbaEncoded[['AgeEncoded', 'TeamEncoded']].groupby(['AgeEncoded'] , as_index=False).agg(['mean', 'count', 'sum'])
 nbaEncoded[['PositionEncoded', 'TeamEncoded']].groupby(['PositionEncoded'] , as_index=False).agg(['mean', 'count', 'sum'])
 nbaEncoded[['SeasonsEncoded', 'TeamEncoded']].groupby(['SeasonsEncoded'] , as_index=False).agg(['mean', 'count', 'sum'])
 
 
-#  HOLA!!! -----> Estoy por aqui!
 
 # TODO: Otro error que tenía: sb.factorplot('age', data=nba, kind="count", aspect=3)
-
-# Se me ocurre hacer algo como esto:
-# nba.loc[filtro_kg, 'WeightPounds'] = procesar_texto(nba.loc[filtro_kg,'Weight']) * 2.3
-
-# donde filtro_kg es un mask para detectar si tiene o no el string
-# y procesar_texto tiene que quitar kg de cada palabra y despues pasarlo a
-# numerico (estas dos cosas se pueden hacer con un apply y una lambda)
-
-nba['WeightPounds'] = nba['Weight']
-# una parte veo que la tienes :
-filtro_kg = nba['WeightPounds'].str.contains('kg') # Lo necesitas almacenar para luego
-
-# ahora seria remplazar el kg  y pasarlo a numerico algo como Estoy
-
-nba.loc[filtro_kg, 'WeightPounds'] = nba.loc[filtro_kg, 'WeightPounds'].replace({r'([0-9]*)(kg)': r'\1'}, regex=True)
-# Prueba ahora!
-nba.loc[filtro_kg, 'WeightPounds'] = nba.loc[filtro_kg,'WeightPounds'].astype(float )
-
-# ahora ya puedes multiplicar
-
-nba.loc[filtro_kg, 'WeightPounds'] = nba.loc[filtro_kg, 'WeightPounds']  * 2.3
-
-
-
-
 
 
 
@@ -233,3 +233,28 @@ PImage("tree1.png")
 
 acc_decision_tree = round(decision_tree.score(x_train, y_train) * 100, 2)
 print(acc_decision_tree)
+
+
+
+
+# Vamos a probar la fiabilidad de la predicción de nuestro árbol:
+
+# Player 1: Luka Doncic
+
+DoncicTest = pd.DataFrame(columns=('TeamEncoded', 'Age', 'PositionEncoded', 'Seasons in league', 'WeightPounds', 'HeightCms'))
+DoncicTest.loc[0] = (2, 19, 0, 0, 218, 201)
+
+DoncicPred = decision_tree.predict(DoncicTest.drop(['TeamEncoded'], axis = 1))
+print("Prediccion: " + str(DoncicPred))
+DoncicProba = decision_tree.predict_proba(DoncicTest.drop(['TeamEncoded'], axis = 1))
+print("Probabilidad de Acierto: " + str(round(DoncicProba[0][DoncicPred]* 100, 2))+"%")
+
+# Player 2: James Harden
+
+HardenTest = pd.DataFrame(columns=('TeamEncoded', 'Age', 'PositionEncoded', 'Seasons in league', 'WeightPounds', 'HeightCms'))
+HardenTest.loc[0] = (2, 29, 0, 9, 220, 196)
+
+HardenPred = decision_tree.predict(HardenTest.drop(['TeamEncoded'], axis = 1))
+print("Prediccion: " + str(HardenPred))
+HardenProba = decision_tree.predict_proba(HardenTest.drop(['TeamEncoded'], axis = 1))
+print("Probabilidad de Acierto: " + str(round(HardenProba[0][HardenPred]* 100, 2))+"%")
