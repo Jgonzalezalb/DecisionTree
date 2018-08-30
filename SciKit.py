@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 #plt.style.use('ggplot')
 from sklearn import tree
 from sklearn.model_selection import KFold
-
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
 from IPython.display import Image as PImage
 from subprocess import check_call
 from PIL import Image, ImageDraw, ImageFont
@@ -128,17 +129,9 @@ filtro_inches[1] = filtro_inches[1].astype(float) * 2.54
 filtro_inches[2] = filtro_inches[0] + filtro_inches[1]
 nba.loc[filtro_feet, 'HeightCms'] = filtro_inches[2]
 
-filtro_Cms = nba['HeightCms'].str.contains('cm')
+filtro_Cms = nba['HeightCms'].str.contains('cm', na=False)
 nba.loc[filtro_Cms, 'HeightCms'] = nba.loc[filtro_Cms, 'HeightCms'].replace({r'([0-9]*)(cm)': r'\1'}, regex=True)
 nba['HeightCms'] = pd.to_numeric(nba['HeightCms'])
-
-
-nba.loc[filtro_feet, 'HeightCms'] = nba.loc[filtro_feet, 'HeightCms'].astype(float)
-nba.loc[filtro_feet, 'HeightCms'] = nba.loc[filtro_feet, 'HeightCms'].replace({'-': '.'}, regex=True)
-
-filtro_inches
-filtro_feet
-nba['HeightCms']
 
 
 
@@ -156,10 +149,11 @@ nbaEncoded = nba[['TeamEncoded', 'Age', 'PositionEncoded', 'Seasons in league', 
 nba
 nbaEncoded
 
-nbaEncoded[['AgeEncoded', 'TeamEncoded']].groupby(['AgeEncoded'] , as_index=False).agg(['mean', 'count', 'sum'])
+nbaEncoded[['Age', 'TeamEncoded']].groupby(['Age'] , as_index=False).agg(['mean', 'count', 'sum'])
 nbaEncoded[['PositionEncoded', 'TeamEncoded']].groupby(['PositionEncoded'] , as_index=False).agg(['mean', 'count', 'sum'])
-nbaEncoded[['SeasonsEncoded', 'TeamEncoded']].groupby(['SeasonsEncoded'] , as_index=False).agg(['mean', 'count', 'sum'])
-
+nbaEncoded[['Seasons in league', 'TeamEncoded']].groupby(['Seasons in league'] , as_index=False).agg(['mean', 'count', 'sum'])
+nbaEncoded[['WeightPounds', 'TeamEncoded']].groupby(['WeightPounds'] , as_index=False).agg(['mean', 'count', 'sum'])
+nbaEncoded[['HeightCms', 'TeamEncoded']].groupby(['HeightCms'] , as_index=False).agg(['mean', 'count', 'sum'])
 
 
 # TODO: Otro error que tenía: sb.factorplot('age', data=nba, kind="count", aspect=3)
@@ -179,14 +173,14 @@ for depth in depth_range:
                                              min_samples_leaf=5,
                                              max_depth = depth,
                                              class_weight={1:3.5})
-    for train_fold, valid_fold in cv.split(nbaEncoded):
+    for train_fold, test_fold in cv.split(nbaEncoded):
         f_train = nbaEncoded.loc[train_fold]
-        f_valid = nbaEncoded.loc[valid_fold]
+        f_test = nbaEncoded.loc[test_fold]
 
         model = tree_model.fit(X = f_train.drop(['TeamEncoded'], axis=1),
                                y = f_train["TeamEncoded"])
-        valid_acc = model.score(X = f_valid.drop(['TeamEncoded'], axis=1),
-                                y = f_valid["TeamEncoded"]) # calculamos la precision con el segmento de validacion
+        valid_acc = model.score(X = f_test.drop(['TeamEncoded'], axis=1),
+                                y = f_test["TeamEncoded"]) # calculamos la precision con el segmento de validacion
         fold_accuracy.append(valid_acc)
 
     avg = sum(fold_accuracy)/len(fold_accuracy)
@@ -197,21 +191,24 @@ df = pd.DataFrame({"Max Depth": depth_range, "Average Accuracy": accuracies})
 df = df[["Max Depth", "Average Accuracy"]]
 print(df.to_string(index=False))
 
+X = nbaEncoded.drop(['TeamEncoded'], axis=1).values
+Y = nbaEncoded["TeamEncoded"].values
 
+X_train, X_test, y_train, y_test = train_test_split( X, Y, test_size = 0.3, random_state = 100)
 
 
 
 # Crear arrays de entrenamiento y las etiquetas que indican si llegó a top o no
-y_train = nbaEncoded['TeamEncoded']
-x_train = nbaEncoded.drop(['TeamEncoded'], axis=1).values
+# y_train = nbaEncoded['TeamEncoded']
+# x_train = nbaEncoded.drop(['TeamEncoded'], axis=1).values
 
 # Crear Arbol de decision con profundidad = 4
 decision_tree = tree.DecisionTreeClassifier(criterion='entropy',
-                                            min_samples_split=20,
-                                            min_samples_leaf=5,
+                                            min_samples_split=25,
+                                            min_samples_leaf=4,
                                             max_depth = 4,
                                             class_weight={1:3.5})
-decision_tree.fit(x_train, y_train)
+decision_tree.fit(X_train, y_train)
 
 # exportar el modelo a archivo .dot
 with open(r"tree1.dot", 'w') as f:
@@ -225,13 +222,13 @@ with open(r"tree1.dot", 'w') as f:
                               filled= True )
 
 # Convertir el archivo .dot a png para poder visualizarlo
-check_call(['dot','-Tpng',r'tree1.dot','-o',r'tree1.png'])
-PImage("tree1.png")
+# check_call(['dot','-Tpng',r'tree1.dot','-o',r'tree1.png'])
+# PImage("tree1.png")
 
 
 
 
-acc_decision_tree = round(decision_tree.score(x_train, y_train) * 100, 2)
+acc_decision_tree = round(decision_tree.score(X_train, y_train) * 100, 2)
 print(acc_decision_tree)
 
 
@@ -247,7 +244,7 @@ DoncicTest.loc[0] = (2, 19, 0, 0, 218, 201)
 DoncicPred = decision_tree.predict(DoncicTest.drop(['TeamEncoded'], axis = 1))
 print("Prediccion: " + str(DoncicPred))
 DoncicProba = decision_tree.predict_proba(DoncicTest.drop(['TeamEncoded'], axis = 1))
-print("Probabilidad de Acierto: " + str(round(DoncicProba[0][DoncicPred]* 100, 2))+"%")
+print("Probabilidad de Acierto: " + str(np.round(DoncicProba[0][DoncicPred]* 100, 2))+"%")
 
 # Player 2: James Harden
 
@@ -257,4 +254,14 @@ HardenTest.loc[0] = (2, 29, 0, 9, 220, 196)
 HardenPred = decision_tree.predict(HardenTest.drop(['TeamEncoded'], axis = 1))
 print("Prediccion: " + str(HardenPred))
 HardenProba = decision_tree.predict_proba(HardenTest.drop(['TeamEncoded'], axis = 1))
-print("Probabilidad de Acierto: " + str(round(HardenProba[0][HardenPred]* 100, 2))+"%")
+print("Probabilidad de Acierto: " + str(np.round(HardenProba[0][HardenPred]* 100, 2))+"%")
+
+# Player 3: Jarrett Allen
+
+AllenTest = pd.DataFrame(columns=('TeamEncoded', 'Age', 'PositionEncoded', 'Seasons in league', 'WeightPounds', 'HeightCms'))
+AllenTest.loc[0] = (3, 20, 2, 1, 234, 211)
+
+AllenPred = decision_tree.predict(AllenTest.drop(['TeamEncoded'], axis = 1))
+print("Prediccion: " + str(AllenPred))
+AllenProba = decision_tree.predict_proba(AllenTest.drop(['TeamEncoded'], axis = 1))
+print("Probabilidad de Acierto: " + str(np.round(AllenProba[0][AllenPred]* 100, 2))+"%")
